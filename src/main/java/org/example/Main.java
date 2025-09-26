@@ -1,15 +1,13 @@
 package org.example;
 
 import org.example.util.EntropyCalculator;
+import org.example.*;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-
-import static org.example.util.EntropyCalculator.calculateEntropy;
 
 public class Main {
     private static PrintWriter report;

@@ -12,6 +12,7 @@ public class Huffman {
 
     // Kompresija fajla
     public static void compress(String inputFile, String outputFile) throws IOException {
+        File inFile = new File(inputFile);
         FrequencyTable frequencyTable = calculateFrequency(new File(inputFile));
         Node root = buildTree(frequencyTable);
 
@@ -23,30 +24,53 @@ public class Huffman {
                 DataOutputStream dos = new DataOutputStream(new FileOutputStream(outputFile));
                 FileInputStream fis = new FileInputStream(inputFile)
         ) {
-            // upiši tabelu kodova
+            // upisujem originalnu velicinu
+            dos.writeLong(inFile.length());
+
+            // upis tabele kodova
             dos.writeInt(codes.size());
             for (Map.Entry<Integer, String> entry : codes.entrySet()) {
                 dos.writeByte(entry.getKey());
-                dos.writeUTF(entry.getValue());
-            }
+                String code = entry.getValue();
+                dos.writeByte(code.length());
 
-            // kodiraj ulazne podatke u string bitova
-            StringBuilder allBits = new StringBuilder();
-            int byteValue;
-            while ((byteValue = fis.read()) != -1) {
-                allBits.append(codes.get(byteValue & 0xFF));
-            }
-
-            // upiši dužinu i same bitove kao bajtove
-            dos.writeInt(allBits.length());
-            for (int i = 0; i < allBits.length(); i += 8) {
                 int b = 0;
-                for (int j = 0; j < 8 && i + j < allBits.length(); j++) {
-                    if (allBits.charAt(i + j) == '1') {
-                        b |= (1 << (7 - j));
+                int bitCount = 0;
+                for(char c: code.toCharArray()){
+                    b = (b << 1) | (c == '1' ? 1 : 0);
+                    bitCount++;
+                    if(bitCount == 8){
+                        dos.writeByte(b);
+                        b = 0;
+                        bitCount = 0;
                     }
                 }
-                dos.writeByte(b);
+
+                if(bitCount > 0){
+                    b <<= (8 - bitCount);
+                    dos.writeByte(b);
+                }
+            }
+
+            // kodiranje ulaznih podataka
+            int buffer = 0;
+            int bitCount = 0;
+            int byteValue;
+            while ((byteValue = fis.read()) != -1) {
+                String code = codes.get(byteValue & 0xFF);
+                for (char c : code.toCharArray()) {
+                    buffer = (buffer << 1) | (c == '1' ? 1 : 0);
+                    bitCount++;
+                    if (bitCount == 8) {
+                        dos.writeByte(buffer);
+                        buffer = 0;
+                        bitCount = 0;
+                    }
+                }
+            }
+            if (bitCount > 0) {
+                buffer <<= (8 - bitCount);
+                dos.writeByte(buffer);
             }
         }
     }
@@ -57,61 +81,99 @@ public class Huffman {
                 DataInputStream dis = new DataInputStream(new FileInputStream(inputFile));
                 FileOutputStream fos = new FileOutputStream(outputFile)
         ) {
+            long originalSize = dis.readLong();
             int tableSize = dis.readInt();
-            Map<String, Integer> codeToSymbol = new HashMap<>(tableSize);
+            Map<Integer, String> codes = new HashMap<>(tableSize);
 
-            // učitaj kodnu tabelu
+            // ucitaj kodnu tabelu
             for (int i = 0; i < tableSize; i++) {
                 int symbol = dis.readUnsignedByte();
-                String code = dis.readUTF();
-                codeToSymbol.put(code, symbol);
+                int codeLength = dis.readByte() & 0xFF;
+                StringBuilder sb = new StringBuilder();
+                int bitsRead = 0;
+
+                while(bitsRead < codeLength){
+                    int oneByte = dis.readUnsignedByte();
+                    for(int j = 7; j >= 0 && bitsRead < codeLength; j--){
+                        int bit = (oneByte >> j) & 1;
+                        sb.append(bit == 1 ? '1' : '0');
+                        bitsRead++;
+                    }
+                }
+                codes.put(symbol, sb.toString());
             }
 
-            int totalBits = dis.readInt();
-            StringBuilder current = new StringBuilder();
+            Node root = rebuildTree(codes);
 
-            int bitsRead = 0;
-            while (bitsRead < totalBits) {
+
+            Node current = root;
+            long bytesWritten = 0;
+            while (bytesWritten < originalSize) {
                 int oneByte = dis.readUnsignedByte();
-                for (int j = 0; j < 8 && bitsRead < totalBits; j++) {
-                    int bit = (oneByte >> (7 - j)) & 1;
-                    current.append(bit == 1 ? '1' : '0');
-
-                    Integer sym = codeToSymbol.get(current.toString());
-                    if (sym != null) {
-                        fos.write(sym);
-                        current.setLength(0);
+                for (int j = 7; j >= 0 && bytesWritten < originalSize; j--) {
+                    int bit = (oneByte >> j) & 1;
+                    current = (bit == 0) ? current.getLeft() : current.getRight();
+                    if (current.isLeaf()) {
+                        fos.write(current.getValue());
+                        current = root;
+                        bytesWritten++;
                     }
-                    bitsRead++;
                 }
             }
         }
     }
 
-    // Gradi Huffman stablo
     private static Node buildTree(FrequencyTable freqTable) {
-        LinkedList<Node> nodes = new LinkedList<>();
+        PriorityQueue<Node> pq = new PriorityQueue<>(Comparator.comparingLong(Node::getFrequency));
+
         for (int i = 0; i < 256; i++) {
             long count = freqTable.getCount(i);
             if (count > 0) {
-                nodes.add(new Node(i, count));
+                pq.add(new Node(i, count));
             }
         }
 
-        if (nodes.isEmpty()) return null;
+        if (pq.isEmpty()) return null;
 
-        // Spajamo dok ne ostane samo jedan čvor
-        while (nodes.size() > 1) {
-            nodes.sort(Comparator.comparingLong(Node::getFrequency));
-            Node left = nodes.removeFirst();
-            Node right = nodes.removeFirst();
-            nodes.add(new Node(left, right));
+        while (pq.size() > 1) {
+            Node left = pq.poll();
+            Node right = pq.poll();
+            pq.add(new Node(left, right));
         }
 
-        return nodes.getFirst();
+        return pq.poll();
     }
 
-    // Generiše kodove
+    // Gradi Huffman stablo iz frekvencija
+    private static Node rebuildTree(Map<Integer, String> codes) {
+        Node root = new Node(-1, 0);
+        for (Map.Entry<Integer, String> entry : codes.entrySet()) {
+            int symbol = entry.getKey();
+            String code = entry.getValue();
+            root = insertNode(root, code, symbol);
+        }
+        return root;
+    }
+
+    private static Node insertNode(Node node, String code, int symbol) {
+        if (code.isEmpty()) {
+            node.setValue(symbol); // ubaci vrednost u leaf
+            return node;
+        }
+
+        char c = code.charAt(0);
+        if (c == '0') {
+            if (node.getLeft() == null) node.setLeft(new Node(-1, 0));
+            insertNode(node.getLeft(), code.substring(1), symbol);
+        } else {
+            if (node.getRight() == null) node.setRight(new Node(-1, 0));
+            insertNode(node.getRight(), code.substring(1), symbol);
+        }
+
+        return node;
+    }
+
+    // Generise kodove
     private static void generateCodes(Node node, String code, Map<Integer, String> codes) {
         if (node.isLeaf()) {
             codes.put(node.getValue(), code.isEmpty() ? "0" : code);
