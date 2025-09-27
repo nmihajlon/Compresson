@@ -11,17 +11,16 @@ public class LZ77 {
     private static final int LOOK_AHEAD_SIZE = 15;
 
     public static void compress(String inputFile, String outputFile) throws IOException {
-        try (FileInputStream fis = new FileInputStream(inputFile);
-             DataOutputStream dos = new DataOutputStream(new FileOutputStream(outputFile))) {
+        try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(inputFile));
+             DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(outputFile)))) {
 
-            byte[] input = fis.readAllBytes();
+            byte[] input = bis.readAllBytes();
             List<Token> tokens = new ArrayList<>();
 
             int pos = 0;
             while (pos < input.length) {
                 Token t = findLongestMatch(input, pos);
                 tokens.add(t);
-
                 pos += t.getLength() + 1;
             }
 
@@ -35,29 +34,34 @@ public class LZ77 {
         }
     }
 
-    // Dekompresija
     public static void decompress(String inputFile, String outputFile) throws IOException {
-        try (DataInputStream dis = new DataInputStream(new FileInputStream(inputFile));
+        try (DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(inputFile)));
              FileOutputStream fos = new FileOutputStream(outputFile)) {
 
             int numTokens = dis.readInt();
-            List<Byte> out = new ArrayList<>();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
 
             for (int i = 0; i < numTokens; i++) {
                 int offset = dis.readUnsignedByte();
                 int length = dis.readUnsignedByte();
                 int symbol = dis.readUnsignedByte();
 
+                if (offset > out.size()) {
+                    throw new IOException("Invalid token: offset je veci od output buffer-a ");
+                }
+
+                // Kopiranje duplikata iz prethodnih bajtova
                 for (int j = 0; j < length; j++) {
-                    if (offset > 0 && out.size() >= offset) {
-                        byte b = out.get(out.size() - offset);
-                        out.add(b);
-                        fos.write(b & 0xFF);
+                    if (offset > 0) {
+                        byte b = out.toByteArray()[out.size() - offset];
+                        out.write(b);
+                        fos.write(b);
                     }
                 }
 
-                out.add((byte) (symbol & 0xFF));
-                fos.write(symbol & 0xFF);
+                // Dodavanje simbol-a
+                out.write((byte) symbol);
+                fos.write(symbol);
             }
         }
     }
@@ -70,8 +74,7 @@ public class LZ77 {
         int maxLength = Math.min(LOOK_AHEAD_SIZE, input.length - pos - 1);
 
         if (pos == input.length - 1) {
-            int last = input[pos] & 0xFF;
-            return new Token(0, 0, last);
+            return new Token(0, 0, input[pos] & 0xFF);
         }
 
         for (int i = searchStart; i < pos; i++) {
