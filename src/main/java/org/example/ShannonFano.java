@@ -98,7 +98,6 @@ public class ShannonFano {
         }
     }
 
-    // Rekurzivno pravi kodove Shannon-Fano stilom
     private static void buildCodes(List<Symbol> symbols, Map<Integer, String> codes, String prefix) {
         if (symbols.size() == 1) {
             codes.put(symbols.get(0).getValue(), prefix.isEmpty() ? "0" : prefix);

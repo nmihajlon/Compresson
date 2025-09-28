@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 public class LZW {
-    // 12 bitni kod
+    // 12 bitni kod -> 0..4096
     private static final int MAX_DICT_SIZE = 4096;
 
     public static void compress(String inputFile, String outputFile) throws IOException {
@@ -55,6 +55,10 @@ public class LZW {
              FileOutputStream fos = new FileOutputStream(outputFile)) {
 
             int numCodes = dis.readInt();
+            if(numCodes == 0){
+                return;
+            }
+
             int[] codes = new int[numCodes];
             for (int i = 0; i < numCodes; i++) {
                 codes[i] = dis.readUnsignedShort();
@@ -68,7 +72,10 @@ public class LZW {
             int dictSize = 256;
 
             String w = "" + (char) codes[0];
-            fos.write(w.getBytes());
+            for (int i = 0; i < w.length(); i++) {
+                fos.write((byte) w.charAt(i));
+            }
+
             for (int i = 1; i < codes.length; i++) {
                 int k = codes[i];
                 String entry;
@@ -80,7 +87,9 @@ public class LZW {
                     throw new IOException("Bad LZW code: " + k);
                 }
 
-                fos.write(entry.getBytes());
+                for (int j = 0; j < entry.length(); j++) {
+                    fos.write((byte) entry.charAt(j));
+                }
 
                 if (dictSize < MAX_DICT_SIZE) {
                     dict.put(dictSize++, w + entry.charAt(0));
