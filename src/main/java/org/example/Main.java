@@ -13,6 +13,12 @@ public class Main {
     private static PrintWriter report;
 
     public static void main(String[] args) {
+        try {
+            org.example.models.GenerateSamples.main(new String[]{});
+        } catch (IOException e) {
+            System.err.println("Greska pri generisanju fajlova: " + e.getMessage());
+        }
+
         String in1 = (args.length >= 1) ? args[0] : "sample.bin";
         String in2 = (args.length >= 2) ? args[1] : "sample.txt";
 
